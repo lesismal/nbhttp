@@ -135,12 +135,14 @@ func (p *Parser) ReadRequest(data []byte) error {
 				p.nextState(stateProtoLF)
 			}
 		case stateClientProtoBefore:
-			if c != 'H' {
+			if c == 'H' {
 				// data = data[i:]
 				// i = 0
 				start = i
 				p.nextState(stateClientProto)
+				continue
 			}
+			return ErrInvalidMethod
 		case stateClientProto:
 			switch c {
 			case ' ':
