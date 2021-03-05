@@ -54,18 +54,18 @@ func TestClientParserTrailer(t *testing.T) {
 
 func testParser(t *testing.T, isClient bool, data []byte) error {
 	parser := newParser(isClient)
-	err := parser.ReadRequest(data)
+	err := parser.Read(data)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	for i := 0; i < len(data)-1; i++ {
-		err := parser.ReadRequest(data[i : i+1])
+		err := parser.Read(data[i : i+1])
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	err = parser.ReadRequest(data[len(data)-1:])
+	err = parser.Read(data[len(data)-1:])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func testParser(t *testing.T, isClient bool, data []byte) error {
 			readBuf := tmp[:nRead]
 			reads = append(reads, readBuf)
 			tmp = tmp[nRead:]
-			err = parser.ReadRequest(readBuf)
+			err = parser.Read(readBuf)
 			if err != nil {
 				t.Fatalf("nRead: %v, numOne: %v, reads: %v, error: %v", len(data)-len(tmp), len(data), reads, err)
 			}
@@ -173,7 +173,7 @@ func BenchmarkServerProcessor(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := parser.ReadRequest(benchData); err != nil {
+		if err := parser.Read(benchData); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -188,7 +188,7 @@ func BenchmarkEmpryProcessor(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := parser.ReadRequest(benchData); err != nil {
+		if err := parser.Read(benchData); err != nil {
 			b.Fatal(err)
 		}
 	}
