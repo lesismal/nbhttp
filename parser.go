@@ -44,8 +44,8 @@ func (p *Parser) nextState(state int8) {
 	p.state = state
 }
 
-// ReadRequest .
-func (p *Parser) ReadRequest(data []byte) error {
+// Read .
+func (p *Parser) Read(data []byte) error {
 	if len(data) == 0 {
 		return nil
 	}
