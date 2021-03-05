@@ -11,13 +11,13 @@ import (
 
 // var parser = newParser()
 func TestParserContentLength(t *testing.T) {
-	data := []byte("POST /echo HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close \r\n Accept-Encoding : gzip \r\n\r\n")
+	data := []byte("POST /echo HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close \r\nAccept-Encoding : gzip \r\n\r\n")
 	testParser(t, data)
 
-	data = []byte("POST /echo HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close \r\n Content-Length :  0\r\nAccept-Encoding : gzip \r\n\r\n")
+	data = []byte("POST /echo HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close \r\nContent-Length :  0\r\nAccept-Encoding : gzip \r\n\r\n")
 	testParser(t, data)
 
-	data = []byte("POST /echo HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close \r\n Content-Length :  5\r\nAccept-Encoding : gzip \r\n\r\nhello")
+	data = []byte("POST /echo HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close \r\nContent-Length :  5\r\nAccept-Encoding : gzip \r\n\r\nhello")
 	testParser(t, data)
 }
 
