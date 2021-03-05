@@ -299,10 +299,10 @@ func (p *Parser) ReadRequest(data []byte) error {
 			}
 		case stateHeaderValue:
 			switch c {
-			case ' ':
-				if p.headerValue == "" {
-					p.headerValue = string(data[start:i])
-				}
+			// case ' ':
+			// 	if p.headerValue == "" {
+			// 		p.headerValue = string(data[start:i])
+			// 	}
 			case '\r':
 				if p.headerValue == "" {
 					p.headerValue = string(data[start:i])
@@ -363,7 +363,7 @@ func (p *Parser) ReadRequest(data []byte) error {
 
 			p.handleMessage()
 		case stateBodyChunkSizeBefore:
-			if isNum(c) {
+			if isHex(c) {
 				p.chunkSize = -1
 				// data = data[i:]
 				// i = 0
@@ -377,7 +377,7 @@ func (p *Parser) ReadRequest(data []byte) error {
 			case '\r':
 				if p.chunkSize < 0 {
 					cs := string(data[start:i])
-					chunkSize, err := strconv.ParseInt(cs, 10, 63)
+					chunkSize, err := strconv.ParseInt(cs, 16, 63)
 					if err != nil || chunkSize < 0 {
 						return fmt.Errorf("invalid chunk size %v", cs)
 					}
@@ -388,9 +388,9 @@ func (p *Parser) ReadRequest(data []byte) error {
 				start = i + 1
 				p.nextState(stateBodyChunkSizeLF)
 			default:
-				if !isNum(c) && p.chunkSize < 0 {
+				if !isHex(c) && p.chunkSize < 0 {
 					cs := string(data[start:i])
-					chunkSize, err := strconv.ParseInt(cs, 10, 63)
+					chunkSize, err := strconv.ParseInt(cs, 16, 63)
 					if err != nil || chunkSize < 0 {
 						return fmt.Errorf("invalid chunk size %v", cs)
 					}
@@ -503,10 +503,10 @@ func (p *Parser) ReadRequest(data []byte) error {
 			}
 		case stateBodyTrailerHeaderValue:
 			switch c {
-			case ' ':
-				if p.headerValue == "" {
-					p.headerValue = string(data[start:i])
-				}
+			// case ' ':
+			// 	if p.headerValue == "" {
+			// 		p.headerValue = string(data[start:i])
+			// 	}
 			case '\r':
 				if p.headerValue == "" {
 					p.headerValue = string(data[start:i])
