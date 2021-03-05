@@ -97,6 +97,7 @@ var (
 	headerCharMap = [256]bool{}
 
 	numCharMap      = [256]bool{}
+	hexCharMap      = [256]bool{}
 	alphaCharMap    = [256]bool{}
 	alphaNumCharMap = [256]bool{}
 
@@ -116,6 +117,11 @@ func init() {
 	for i := byte(0); i < 10; i++ {
 		numCharMap['0'+i] = true
 		alphaNumCharMap['0'+i] = true
+		hexCharMap['0'+i] = true
+	}
+	for i := byte(0); i < 6; i++ {
+		hexCharMap['A'+i] = true
+		hexCharMap['a'+i] = true
 	}
 
 	for i := byte(0); i < 26; i++ {
@@ -137,6 +143,10 @@ func isAlpha(c byte) bool {
 
 func isNum(c byte) bool {
 	return numCharMap[c]
+}
+
+func isHex(c byte) bool {
+	return hexCharMap[c]
 }
 
 func isAlphaNum(c byte) bool {
