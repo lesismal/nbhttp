@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// var parser = newParser()
 func TestServerParserContentLength(t *testing.T) {
 	data := []byte("POST /echo HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close \r\nAccept-Encoding : gzip \r\n\r\n")
 	testParser(t, false, data)
