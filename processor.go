@@ -121,6 +121,97 @@ func NewServerProcessor(handler http.Handler) Processor {
 	}
 }
 
+// ClientProcessor .
+type ClientProcessor struct {
+	response *http.Response
+	handler  func(*http.Response)
+}
+
+// OnMethod .
+func (p *ClientProcessor) OnMethod(method string) {
+}
+
+// OnURL .
+func (p *ClientProcessor) OnURL(uri string) error {
+	return nil
+}
+
+// OnProto .
+func (p *ClientProcessor) OnProto(proto string) error {
+	protoMajor, protoMinor, ok := http.ParseHTTPVersion(proto)
+	if !ok {
+		return fmt.Errorf("%s %q", "malformed HTTP version", proto)
+	}
+	if p.response == nil {
+		p.response = &http.Response{
+			Proto:  proto,
+			Header: http.Header{},
+		}
+	} else {
+		p.response.Proto = proto
+	}
+	p.response.ProtoMajor = protoMajor
+	p.response.ProtoMinor = protoMinor
+	return nil
+}
+
+// OnStatus .
+func (p *ClientProcessor) OnStatus(code int, status string) {
+	p.response.StatusCode = code
+	p.response.Status = status
+}
+
+// OnHeader .
+func (p *ClientProcessor) OnHeader(key, value string) {
+	p.response.Header.Add(key, value)
+}
+
+// OnContentLength .
+func (p *ClientProcessor) OnContentLength(contentLength int) {
+	p.response.ContentLength = int64(contentLength)
+}
+
+// OnBody .
+func (p *ClientProcessor) OnBody(data []byte) {
+	if p.response.Body == nil {
+		p.response.Body = &BodyReader{buffer: data}
+	} else {
+		br := p.response.Body.(*BodyReader)
+		br.buffer = append(br.buffer, data...)
+	}
+}
+
+// OnTrailerHeader .
+func (p *ClientProcessor) OnTrailerHeader(key, value string) {
+	if p.response.Trailer == nil {
+		p.response.Trailer = http.Header{}
+	}
+	p.response.Trailer.Add(key, value)
+}
+
+// OnComplete .
+func (p *ClientProcessor) OnComplete(addr string) {
+	p.handler(p.response)
+	p.response = nil
+}
+
+// HandleMessage .
+func (p *ClientProcessor) HandleMessage(handler func(*http.Response)) {
+	if handler != nil {
+		p.handler = handler
+	}
+}
+
+// NewClientProcessor .
+func NewClientProcessor(handler func(*http.Response)) Processor {
+	if handler == nil {
+		panic(errors.New("invalid handler for ClientProcessor: nil"))
+	}
+	return &ClientProcessor{
+		handler: handler,
+	}
+}
+
 // EmptyProcessor .
 type EmptyProcessor struct{}
 
