@@ -243,7 +243,7 @@ func (p *Parser) Read(data []byte) error {
 				if err != nil {
 					return err
 				}
-				err = p.parseLength()
+				err = p.parseContentLength()
 				if err != nil {
 					return err
 				}
@@ -338,9 +338,9 @@ func (p *Parser) Read(data []byte) error {
 					p.nextState(stateBodyChunkSizeBefore)
 				} else {
 					start = i + 1
-					if p.contentLength < 0 {
-						return ErrInvalidContentLength
-					}
+					// if p.contentLength < 0 {
+					// 	return ErrInvalidContentLength
+					// }
 					if p.contentLength > 0 {
 						p.nextState(stateBodyContentLength)
 					} else {
@@ -579,7 +579,7 @@ func (p *Parser) parseTransferEncoding() error {
 	return nil
 }
 
-func (p *Parser) parseLength() (err error) {
+func (p *Parser) parseContentLength() (err error) {
 	if cl := p.header.Get("Content-Length"); cl != "" {
 		if p.chunked {
 			return ErrUnexpectedContentLength
@@ -588,7 +588,12 @@ func (p *Parser) parseLength() (err error) {
 		if err != nil {
 			return fmt.Errorf("%s %q", "bad Content-Length", cl)
 		}
+		if l < 0 {
+			return ErrInvalidContentLength
+		}
 		p.contentLength = int(l)
+	} else {
+		p.contentLength = -1
 	}
 	return nil
 }
