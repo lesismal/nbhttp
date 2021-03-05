@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+
+	"github.com/golang/net/http/httpguts"
 )
 
 // Processor .
@@ -96,12 +98,31 @@ func (p *ServerProcessor) OnTrailerHeader(key, value string) {
 
 // OnComplete .
 func (p *ServerProcessor) OnComplete(addr string) {
-	if p.request.URL.Host == "" {
-		p.request.URL.Host = p.request.Header.Get("Host")
-	}
-	p.request.RemoteAddr = addr
-	p.handler.ServeHTTP(nil, p.request)
+	request := p.request
 	p.request = nil
+
+	if request.URL.Host == "" {
+		request.URL.Host = request.Header.Get("Host")
+		request.Host = request.URL.Host
+	}
+
+	request.TransferEncoding = request.Header["Transfer-Encoding"]
+
+	if request.ProtoMajor < 1 {
+		request.Close = true
+	} else {
+		hasClose := httpguts.HeaderValuesContainsToken(request.Header["Connection"], "close")
+		if request.ProtoMajor == 1 && request.ProtoMinor == 0 {
+			request.Close = hasClose || !httpguts.HeaderValuesContainsToken(request.Header["Connection"], "keep-alive")
+		}
+		// if hasClose && removeCloseHeader {
+		// 	request.Header.Del("Connection")
+		// }
+	}
+
+	request.RemoteAddr = addr
+
+	p.handler.ServeHTTP(nil, request)
 }
 
 // HandleMessage .
