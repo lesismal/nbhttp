@@ -3,8 +3,11 @@ package nbhttp
 import (
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"sync/atomic"
 
 	"github.com/golang/net/http/httpguts"
 )
@@ -19,13 +22,15 @@ type Processor interface {
 	OnContentLength(contentLength int)
 	OnBody([]byte)
 	OnTrailerHeader(key, value string)
-	OnComplete(addr string)
+	OnComplete(conn net.Conn)
+	WriteTo(w io.Writer, data []byte) (int, error)
 }
 
 // ServerProcessor .
 type ServerProcessor struct {
-	request *http.Request
-	handler http.Handler
+	request  *http.Request
+	handler  http.Handler
+	sequence uint64
 }
 
 // OnMethod .
@@ -97,9 +102,13 @@ func (p *ServerProcessor) OnTrailerHeader(key, value string) {
 }
 
 // OnComplete .
-func (p *ServerProcessor) OnComplete(addr string) {
+func (p *ServerProcessor) OnComplete(conn net.Conn) {
 	request := p.request
 	p.request = nil
+
+	if conn != nil {
+		request.RemoteAddr = conn.RemoteAddr().String()
+	}
 
 	if request.URL.Host == "" {
 		request.URL.Host = request.Header.Get("Host")
@@ -120,9 +129,12 @@ func (p *ServerProcessor) OnComplete(addr string) {
 		// }
 	}
 
-	request.RemoteAddr = addr
+	p.handler.ServeHTTP(p.newResponse(conn, request), request)
+}
 
-	p.handler.ServeHTTP(nil, request)
+// WriteTo .
+func (p *ServerProcessor) WriteTo(w io.Writer, data []byte) (int, error) {
+	return len(data), nil
 }
 
 // HandleMessage .
@@ -130,6 +142,17 @@ func (p *ServerProcessor) HandleMessage(handler http.Handler) {
 	if handler != nil {
 		p.handler = handler
 	}
+}
+
+func (p *ServerProcessor) newResponse(conn net.Conn, request *http.Request) http.ResponseWriter {
+	response := &Response{
+		writer:    conn,
+		processor: p,
+		request:   request,
+		sequence:  atomic.AddUint64(&p.sequence, 1),
+		header:    http.Header{},
+	}
+	return response
 }
 
 // NewServerProcessor .
@@ -211,9 +234,14 @@ func (p *ClientProcessor) OnTrailerHeader(key, value string) {
 }
 
 // OnComplete .
-func (p *ClientProcessor) OnComplete(addr string) {
+func (p *ClientProcessor) OnComplete(conn net.Conn) {
 	p.handler(p.response)
 	p.response = nil
+}
+
+// WriteTo .
+func (p *ClientProcessor) WriteTo(w io.Writer, data []byte) (int, error) {
+	return len(data), nil
 }
 
 // HandleMessage .
@@ -277,8 +305,13 @@ func (p *EmptyProcessor) OnTrailerHeader(key, value string) {
 }
 
 // OnComplete .
-func (p *EmptyProcessor) OnComplete(addr string) {
+func (p *EmptyProcessor) OnComplete(conn net.Conn) {
 
+}
+
+// WriteTo .
+func (p *EmptyProcessor) WriteTo(w io.Writer, data []byte) (int, error) {
+	return len(data), nil
 }
 
 // HandleMessage .
