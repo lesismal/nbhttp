@@ -11,124 +11,96 @@ import (
 )
 
 var (
+
 	// ErrInvalidCRLF .
 	ErrInvalidCRLF = errors.New("invalid cr/lf at the end of line")
 
+	// ErrInvalidHTTPVersion .
+	ErrInvalidHTTPVersion = errors.New("invalid HTTP version")
+
+	// ErrInvalidHTTPStatusCode .
+	ErrInvalidHTTPStatusCode = errors.New("invalid HTTP status code")
+
 	// ErrInvalidMethod .
-	ErrInvalidMethod = errors.New("invalid method")
+	ErrInvalidMethod = errors.New("invalid HTTP method")
+
+	// ErrInvalidRequestURI .
+	ErrInvalidRequestURI = errors.New("invalid URL")
+
+	// ErrInvalidHost .
+	ErrInvalidHost = errors.New("invalid host")
+
+	// ErrInvalidPort .
+	ErrInvalidPort = errors.New("invalid port")
+
+	// ErrInvalidPath .
+	ErrInvalidPath = errors.New("invalid path")
+
+	// ErrInvalidQueryString .
+	ErrInvalidQueryString = errors.New("invalid query string")
+
+	// ErrInvalidFragment .
+	ErrInvalidFragment = errors.New("invalid fragment")
+
+	// ErrCRExpected .
+	ErrCRExpected = errors.New("CR character expected")
+
+	// ErrLFExpected .
+	ErrLFExpected = errors.New("LF character expected")
+
+	// ErrInvalidCharInHeader .
+	ErrInvalidCharInHeader = errors.New("invalid character in header")
+
+	// ErrUnexpectedContentLength .
+	ErrUnexpectedContentLength = errors.New("unexpected content-length header")
 
 	// ErrInvalidContentLength .
 	ErrInvalidContentLength = errors.New("invalid ContentLength")
 
 	// ErrInvalidChunkSize .
-	ErrInvalidChunkSize = errors.New("invalid chunk data")
+	ErrInvalidChunkSize = errors.New("invalid chunk size")
+
+	// ErrTrailerExpected .
+	ErrTrailerExpected = errors.New("trailer expected")
 )
-
-var (
-	blankCharMap = [128]bool{
-		' ':  true,
-		'\r': true,
-		'\n': true,
-	}
-
-	validMethods = map[string]bool{
-		"OPTIONS": true,
-		"GET":     true,
-		"HEAD":    true,
-		"POST":    true,
-		"PUT":     true,
-		"DELETE":  true,
-		"TRACE":   true,
-		"CONNECT": true,
-	}
-
-	numCharMap      = [128]bool{}
-	alphaCharMap    = [128]bool{}
-	alphaNumCharMap = [128]bool{}
-
-	validMethodCharMap = [128]bool{}
-)
-
-func init() {
-	var dis byte = 'a' - 'A'
-
-	for m := range validMethods {
-		for _, c := range m {
-			validMethodCharMap[c] = true
-			validMethodCharMap[byte(c)+dis] = true
-		}
-	}
-
-	for i := byte(0); i < 10; i++ {
-		numCharMap['0'+i] = true
-		alphaNumCharMap['0'+i] = true
-	}
-
-	for i := byte(0); i < 26; i++ {
-		alphaCharMap['A'+i] = true
-		alphaCharMap['A'+i+dis] = true
-		alphaNumCharMap['A'+i] = true
-		alphaNumCharMap['A'+i+dis] = true
-	}
-}
-
-func isAlpha(c byte) bool {
-	return alphaCharMap[c]
-}
-
-func isNum(c byte) bool {
-	return numCharMap[c]
-}
-
-func isAlphaNum(c byte) bool {
-	return alphaNumCharMap[c]
-}
-
-func isBlankChar(c byte) bool {
-	return blankCharMap[c]
-}
-
-func isValidMethod(m string) bool {
-	return validMethods[strings.ToUpper(m)]
-}
-
-func isValidMethodChar(c byte) bool {
-	return validMethodCharMap[c]
-}
 
 const (
 	// state: RequestLine
-	stateMethodBefore int8 = iota
+	stateInit int8 = iota
+	stateMethodBefore
 	stateMethod
 
 	statePathBefore
 	statePath
 	stateProtoBefore
 	stateProto
+	stateProtoLF
 	stateStatusBefore
 	stateStatus
 
 	// state: Header
 	stateHeaderKeyBefore
-	stateHeaderKeyLF
+	stateHeaderValueLF
 	stateHeaderKey
 
 	stateHeaderValueBefore
 	stateHeaderValue
 
 	// state: Body ContentLength
-	stateBodyContentLengthBlankLine
 	stateBodyContentLength
 
 	// state: Body Chunk
+	stateHeaderOverLF
 	stateBodyChunkSizeBlankLine
 	stateBodyChunkSizeBefore
 	stateBodyChunkSize
-	stateBodyChunkDataBefore
+	stateBodyChunkSizeLF
 	stateBodyChunkData
+	stateBodyChunkDataCR
+	stateBodyChunkDataLF
 
 	// state: Body Trailer
-	stateBodyTrailerHeaderKeyLF
+	stateBodyTrailerHeaderValueLF
 	stateBodyTrailerHeaderKeyBefore
 	stateBodyTrailerHeaderKey
 	stateBodyTrailerHeaderValueBefore
@@ -147,6 +119,7 @@ type Parser struct {
 
 	cache []byte
 
+	proto       string
 	headerKey   string
 	headerValue string
 
@@ -184,25 +157,34 @@ func (p *Parser) ReadRequest(data []byte) error {
 	for i := offset; i < len(data); i++ {
 		c = data[i]
 		switch p.state {
+		// case stateInit:
+		// 	if !isValidMethodChar(c) {
+		// 		return ErrInvalidMethod
+		// 	}
 		case stateMethodBefore:
-			if !isValidMethodChar(c) {
+			if isValidMethodChar(c) {
+				// data = data[i:]
+				// i = 0
+				start = i
+				p.nextState(stateMethod)
 				continue
 			}
-			// data = data[i:]
-			// i = 0
-			start = i
-			p.nextState(stateMethod)
+			return ErrInvalidMethod
 		case stateMethod:
 			if c == ' ' {
 				var method = strings.ToUpper(string(data[start:i]))
 				if !isValidMethod(method) {
 					return ErrInvalidMethod
 				}
-				p.processor.Method(method)
+				p.processor.OnMethod(method)
 				// data = data[i+1:]
 				// i = -1
 				start = i + 1
 				p.nextState(statePathBefore)
+				continue
+			}
+			if !isAlpha(c) {
+				return ErrInvalidMethod
 			}
 		case statePathBefore:
 			if c == '/' {
@@ -210,12 +192,15 @@ func (p *Parser) ReadRequest(data []byte) error {
 				// i = 0
 				start = i
 				p.nextState(statePath)
+				continue
 			}
-
+			if c != ' ' {
+				return ErrInvalidRequestURI
+			}
 		case statePath:
 			if c == ' ' {
 				var uri = string(data[start:i])
-				if err := p.processor.URL(uri); err != nil {
+				if err := p.processor.OnURL(uri); err != nil {
 					return err
 				}
 				// data = data[i+1:]
@@ -232,58 +217,77 @@ func (p *Parser) ReadRequest(data []byte) error {
 			}
 		case stateProto:
 			switch c {
-			case ' ', '\r':
-				var proto = string(data[start:i])
-				if err := p.processor.Proto(proto); err != nil {
+			case ' ':
+				if p.proto == "" {
+					p.proto = string(data[start:i])
+				}
+			case '\r':
+				if p.proto == "" {
+					p.proto = string(data[start:i])
+				}
+				if err := p.processor.OnProto(p.proto); err != nil {
+					p.proto = ""
 					return err
 				}
-			case '\n':
+				p.proto = ""
+				p.nextState(stateProtoLF)
+			}
+		case stateProtoLF:
+			if c == '\n' {
+				// data = data[i+1:]
+				// i = -1
+				start = i + 1
+				if !p.isClient {
+					p.nextState(stateHeaderKeyBefore)
+				} else {
+					p.nextState(stateStatusBefore)
+				}
+				continue
+			}
+			return ErrLFExpected
+			// case stateStatus:
+		case stateHeaderValueLF:
+			if c == '\n' {
 				// data = data[i+1:]
 				// i = -1
 				start = i + 1
 				p.nextState(stateHeaderKeyBefore)
-			}
-		// case stateStatus:
-		case stateHeaderKeyLF:
-			if c != '\n' {
-				return ErrInvalidCRLF
-			}
-			// data = data[i+1:]
-			// i = -1
-			start = i + 1
-			p.nextState(stateHeaderKeyBefore)
-		case stateHeaderKeyBefore:
-			if c == ' ' {
 				continue
 			}
+			return ErrLFExpected
+		case stateHeaderKeyBefore:
+			// if c == ' ' {
+			// 	continue
+			// }
 
-			if c != '\r' {
+			switch c {
+			case '\r':
+				err := p.parseTransferEncoding()
+				if err != nil {
+					return err
+				}
+				err = p.parseLength()
+				if err != nil {
+					return err
+				}
+				p.processor.OnContentLength(p.contentLength)
+				err = p.parseTrailer()
+				if err != nil {
+					return err
+				}
+				// data = data[i+1:]
+				// i = -1
+				start = i + 1
+				p.nextState(stateHeaderOverLF)
+			default:
 				// data = data[i:]
 				// i = 0
-				start = i
-				p.nextState(stateHeaderKey)
-				continue
-			}
-			err := p.parseTransferEncoding()
-			if err != nil {
-				return err
-			}
-			err = p.parseLength()
-			if err != nil {
-				return err
-			}
-			p.processor.ContentLength(p.contentLength)
-			err = p.parseTrailer()
-			if err != nil {
-				return err
-			}
-			// data = data[i+1:]
-			// i = -1
-			start = i + 1
-			if p.chunked {
-				p.nextState(stateBodyChunkSizeBlankLine)
-			} else {
-				p.nextState(stateBodyContentLengthBlankLine)
+				if isAlpha(c) {
+					start = i
+					p.nextState(stateHeaderKey)
+					continue
+				}
+				return ErrInvalidCharInHeader
 			}
 		case stateHeaderKey:
 			switch c {
@@ -300,9 +304,17 @@ func (p *Parser) ReadRequest(data []byte) error {
 				start = i + 1
 				p.nextState(stateHeaderValueBefore)
 			default:
+				if !isToken(c) {
+					return ErrInvalidCharInHeader
+				}
 			}
 		case stateHeaderValueBefore:
-			if c != ' ' {
+			switch c {
+			case ' ':
+			default:
+				if !isToken(c) {
+					return ErrInvalidCharInHeader
+				}
 				// data = data[i:]
 				// i = 0
 				start = i
@@ -327,138 +339,162 @@ func (p *Parser) ReadRequest(data []byte) error {
 				default:
 				}
 
-				p.processor.Header(p.headerKey, p.headerValue)
+				p.processor.OnHeader(p.headerKey, p.headerValue)
 				p.headerKey = ""
 				p.headerValue = ""
 
 				// data = data[i+1:]
 				// i = -1
 				start = i + 1
-				p.nextState(stateHeaderKeyLF)
+				p.nextState(stateHeaderValueLF)
+			default:
+				// if !isToken(c) {
+				// 	return ErrInvalidCharInHeader
+				// }
 			}
-		case stateBodyContentLengthBlankLine:
-			if c != '\n' {
-				return ErrInvalidCRLF
+		case stateHeaderOverLF:
+			if c == '\n' {
+				if p.chunked {
+					// data = data[i+1:]
+					// i = -1
+					start = i + 1
+					p.nextState(stateBodyChunkSizeBefore)
+				} else {
+					start = i + 1
+					if p.contentLength < 0 {
+						return ErrInvalidContentLength
+					}
+					if p.contentLength > 0 {
+						p.nextState(stateBodyContentLength)
+					} else {
+						p.handleMessage()
+						p.nextState(stateMethodBefore)
+					}
+				}
+				continue
 			}
-			// data = data[i+1:]
-			// i = -1
-			start = i + 1
-			if p.contentLength < 0 {
-				return ErrInvalidContentLength
-			}
-			if p.contentLength > 0 {
-				p.nextState(stateBodyContentLength)
-			} else {
-				p.handleMessage()
-				p.nextState(stateMethodBefore)
-			}
+			return ErrLFExpected
 		case stateBodyContentLength:
 			cl := p.contentLength
 			if len(data)-start < cl {
 				p.cache = data[start:]
 				return nil
 			}
-			p.processor.Body(data[start : start+cl])
+			p.processor.OnBody(data[start : start+cl])
 			// data = data[cl:]
 			i = start + cl - 1
 			start = cl
 
 			p.handleMessage()
 			p.nextState(stateMethodBefore)
-		case stateBodyChunkSizeBlankLine:
-			if c != '\n' {
-				return ErrInvalidCRLF
-			}
-
-			// data = data[i+1:]
-			// i = -1
-			start = i + 1
-			p.nextState(stateBodyChunkSizeBefore)
 		case stateBodyChunkSizeBefore:
 			if isNum(c) {
+				p.chunkSize = -1
 				// data = data[i:]
 				// i = 0
 				start = i
 				p.nextState(stateBodyChunkSize)
+				continue
 			}
+			return ErrInvalidChunkSize
 		case stateBodyChunkSize:
-			if !isNum(c) {
-				cs := string(data[start:i])
-				chunkSize, err := strconv.ParseInt(cs, 10, 63)
-				if err != nil {
-					return fmt.Errorf("%s %q", "bad Content-Length", cs)
+			switch c {
+			case '\r':
+				if p.chunkSize < 0 {
+					cs := string(data[start:i])
+					chunkSize, err := strconv.ParseInt(cs, 10, 63)
+					if err != nil || chunkSize < 0 {
+						return fmt.Errorf("invalid chunk size %v", cs)
+					}
+					p.chunkSize = int(chunkSize)
 				}
-				if chunkSize < 0 {
-					return ErrInvalidChunkSize
-				}
-				p.chunkSize = int(chunkSize)
-			}
-			if c == '\r' {
 				// data = data[i+1:]
 				// i = -1
 				start = i + 1
-				p.nextState(stateBodyChunkDataBefore)
-			} else {
-				// chunk extension
-			}
-		case stateBodyChunkDataBefore:
-			if c != '\n' {
-				return ErrInvalidCRLF
-			}
-			// data = data[i+1:]
-			// i = -1
-			start = i + 1
-			if p.chunkSize > 0 {
-				p.nextState(stateBodyChunkData)
-			} else {
-				// chunk size is 0
-
-				if len(p.trailer) > 0 {
-					// read trailer headers
-					p.nextState(stateBodyTrailerHeaderKeyBefore)
+				p.nextState(stateBodyChunkSizeLF)
+			default:
+				if !isNum(c) && p.chunkSize < 0 {
+					cs := string(data[start:i])
+					chunkSize, err := strconv.ParseInt(cs, 10, 63)
+					if err != nil || chunkSize < 0 {
+						return fmt.Errorf("invalid chunk size %v", cs)
+					}
+					p.chunkSize = int(chunkSize)
 				} else {
-					// read tail cr lf
-					p.nextState(stateTailCR)
+					// chunk extension
 				}
 			}
+		case stateBodyChunkSizeLF:
+			if c == '\n' {
+				// data = data[i+1:]
+				// i = -1
+				start = i + 1
+				if p.chunkSize > 0 {
+					p.nextState(stateBodyChunkData)
+				} else {
+					// chunk size is 0
+
+					if len(p.trailer) > 0 {
+						// read trailer headers
+						p.nextState(stateBodyTrailerHeaderKeyBefore)
+					} else {
+						// read tail cr lf
+						p.nextState(stateTailCR)
+					}
+				}
+				continue
+			}
+			return ErrLFExpected
 		case stateBodyChunkData:
 			if len(data)-start < p.chunkSize {
 				p.cache = data[start:]
 				return nil
 			}
-			p.processor.Body(data[start : start+p.chunkSize])
+			p.processor.OnBody(data[start : start+p.chunkSize])
 			// data = data[p.chunkSize:]
 			start += p.chunkSize
 			i = start - 1
-			p.nextState(stateBodyChunkSizeBefore)
-		case stateBodyTrailerHeaderKeyLF:
-			if c != '\n' {
-				return ErrInvalidCRLF
-			}
-			// data = data[i+1:]
-			// i = -1
-			start = i
-			p.nextState(stateBodyTrailerHeaderKeyBefore)
-		case stateBodyTrailerHeaderKeyBefore:
-			if c == ' ' {
+			p.nextState(stateBodyChunkDataCR)
+		case stateBodyChunkDataCR:
+			if c == '\r' {
+				p.nextState(stateBodyChunkDataLF)
 				continue
 			}
-
-			// all trailer header readed
-			if c == '\r' {
+			return ErrCRExpected
+		case stateBodyChunkDataLF:
+			if c == '\n' {
+				p.nextState(stateBodyChunkSizeBefore)
+				continue
+			}
+			return ErrLFExpected
+		case stateBodyTrailerHeaderValueLF:
+			if c == '\n' {
 				// data = data[i+1:]
 				// i = -1
-				start = i + 1
-				p.nextState(stateTailLF)
+				start = i
+				p.nextState(stateBodyTrailerHeaderKeyBefore)
 				continue
 			}
-
-			// first alpha letter: the beginning of a new header's 'key'
+			return ErrLFExpected
+		case stateBodyTrailerHeaderKeyBefore:
 			if isAlpha(c) {
 				// data = data[i:]
 				// i = 0
 				start = i
 				p.nextState(stateBodyTrailerHeaderKey)
+				continue
+			}
+
+			// all trailer header readed
+			if c == '\r' {
+				if len(p.trailer) > 0 {
+					return ErrTrailerExpected
+				}
+				// data = data[i+1:]
+				// i = -1
+				start = i + 1
+				p.nextState(stateTailLF)
+				continue
 			}
 		case stateBodyTrailerHeaderKey:
 			switch c {
@@ -466,6 +502,7 @@ func (p *Parser) ReadRequest(data []byte) error {
 				if p.headerKey == "" {
 					p.headerKey = http.CanonicalHeaderKey(string(data[start:i]))
 				}
+				continue
 			case ':':
 				if p.headerKey == "" {
 					p.headerKey = http.CanonicalHeaderKey(string(data[start:i]))
@@ -474,12 +511,18 @@ func (p *Parser) ReadRequest(data []byte) error {
 				// i = -1
 				start = i + 1
 				p.nextState(stateBodyTrailerHeaderValueBefore)
-			default:
+				continue
+			}
+			if !isToken(c) {
+				return ErrInvalidCharInHeader
 			}
 		case stateBodyTrailerHeaderValueBefore:
 			if c != ' ' {
 				// data = data[i:]
 				// i = 0
+				if !isToken(c) {
+					return ErrInvalidCharInHeader
+				}
 				start = i
 				p.nextState(stateBodyTrailerHeaderValue)
 			}
@@ -498,28 +541,34 @@ func (p *Parser) ReadRequest(data []byte) error {
 				}
 				delete(p.trailer, p.headerKey)
 
-				p.processor.TrailerHeader(p.headerKey, p.headerValue)
+				p.processor.OnTrailerHeader(p.headerKey, p.headerValue)
 				// data = data[i+1:]
 				// i = -1
 				start = i + 1
 				p.headerKey = ""
 				p.headerValue = ""
-				p.nextState(stateBodyTrailerHeaderKeyLF)
+				p.nextState(stateBodyTrailerHeaderValueLF)
+			default:
+				// if !isToken(c) {
+				// 	return ErrInvalidCharInHeader
+				// }
 			}
 		case stateTailCR:
-			if c != '\r' {
-				return ErrInvalidCRLF
+			if c == '\r' {
+				p.nextState(stateTailLF)
+				continue
 			}
-			p.nextState(stateTailLF)
+			return ErrCRExpected
 		case stateTailLF:
-			if c != '\n' {
-				return ErrInvalidCRLF
+			if c == '\n' {
+				// data = data[i+1:]
+				// i = -1
+				start = i + 1
+				p.handleMessage()
+				p.nextState(stateMethodBefore)
+				continue
 			}
-			// data = data[i+1:]
-			// i = -1
-			start = i + 1
-			p.handleMessage()
-			p.nextState(stateMethodBefore)
+			return ErrLFExpected
 		default:
 		}
 	}
@@ -557,14 +606,15 @@ func (p *Parser) parseTransferEncoding() error {
 }
 
 func (p *Parser) parseLength() (err error) {
-	if !p.chunked {
-		if cl := p.header.Get("Content-Length"); cl != "" {
-			l, err := strconv.ParseInt(cl, 10, 63)
-			if err != nil {
-				return fmt.Errorf("%s %q", "bad Content-Length", cl)
-			}
-			p.contentLength = int(l)
+	if cl := p.header.Get("Content-Length"); cl != "" {
+		if p.chunked {
+			return ErrUnexpectedContentLength
 		}
+		l, err := strconv.ParseInt(cl, 10, 63)
+		if err != nil {
+			return fmt.Errorf("%s %q", "bad Content-Length", cl)
+		}
+		p.contentLength = int(l)
 	}
 	return nil
 }
@@ -621,7 +671,7 @@ func (p *Parser) handleMessage() {
 	if p.conn != nil {
 		addr = p.conn.RemoteAddr().String()
 	}
-	p.processor.Complete(addr)
+	p.processor.OnComplete(addr)
 	p.header = nil
 }
 
@@ -632,6 +682,7 @@ func NewParser(conn net.Conn, processor Processor, isClient bool, maxReadSize in
 	}
 	return &Parser{
 		conn:        conn,
+		state:       stateMethodBefore,
 		maxReadSize: maxReadSize,
 		isClient:    isClient,
 		processor:   processor,
