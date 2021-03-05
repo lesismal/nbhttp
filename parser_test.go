@@ -10,61 +10,85 @@ import (
 )
 
 // var parser = newParser()
-func TestParserContentLength(t *testing.T) {
+func TestServerParserContentLength(t *testing.T) {
 	data := []byte("POST /echo HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close \r\nAccept-Encoding : gzip \r\n\r\n")
-	testParser(t, data)
+	testParser(t, false, data)
 
 	data = []byte("POST /echo HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close \r\nContent-Length :  0\r\nAccept-Encoding : gzip \r\n\r\n")
-	testParser(t, data)
+	testParser(t, false, data)
 
 	data = []byte("POST /echo HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close \r\nContent-Length :  5\r\nAccept-Encoding : gzip \r\n\r\nhello")
-	testParser(t, data)
+	testParser(t, false, data)
 }
 
-func TestParserChunks(t *testing.T) {
+func TestServerParserChunks(t *testing.T) {
 	data := []byte("POST / HTTP/1.1\r\nHost: localhost:1235\r\nUser-Agent: Go-http-client/1.1\r\nTransfer-Encoding: chunked\r\nAccept-Encoding: gzip\r\n\r\n4\r\nbody\r\n0\r\n\r\n")
-	testParser(t, data)
+	testParser(t, false, data)
 }
 
-func TestParserTrailer(t *testing.T) {
+func TestServerParserTrailer(t *testing.T) {
 	data := []byte("POST / HTTP/1.1\r\nHost: localhost:1235\r\nUser-Agent: Go-http-client/1.1\r\nTransfer-Encoding: chunked\r\nTrailer: Md5,Size\r\nAccept-Encoding: gzip\r\n\r\n4\r\nbody\r\n0\r\nMd5: 841a2d689ad86bd1611447453c22c6fc\r\nSize: 4\r\n\r\n")
-	testParser(t, data)
+	testParser(t, false, data)
 }
 
-func testParser(t *testing.T, requestData []byte) error {
-	parser := newParser()
-	err := parser.ReadRequest(requestData)
+func TestClientParserContentLength(t *testing.T) {
+	data := []byte("HTTP/1.1 200 OK\r\nHost: localhost:8080\r\nConnection: close \r\nAccept-Encoding : gzip \r\n\r\n")
+	testParser(t, true, data)
+
+	data = []byte("HTTP/1.1 200 OK\r\nHost: localhost:8080\r\nConnection: close \r\nContent-Length :  0\r\nAccept-Encoding : gzip \r\n\r\n")
+	testParser(t, true, data)
+
+	data = []byte("HTTP/1.1 200 OK\r\nHost: localhost:8080\r\nConnection: close \r\nContent-Length :  5\r\nAccept-Encoding : gzip \r\n\r\nhello")
+	testParser(t, true, data)
+}
+
+func TestClientParserChunks(t *testing.T) {
+	data := []byte("HTTP/1.1 200 OK\r\nHost: localhost:1235\r\nUser-Agent: Go-http-client/1.1\r\nTransfer-Encoding: chunked\r\nAccept-Encoding: gzip\r\n\r\n4\r\nbody\r\n0\r\n\r\n")
+	testParser(t, true, data)
+}
+
+func TestClientParserTrailer(t *testing.T) {
+	data := []byte("HTTP/1.1 200 OK\r\nHost: localhost:1235\r\nUser-Agent: Go-http-client/1.1\r\nTransfer-Encoding: chunked\r\nTrailer: Md5,Size\r\nAccept-Encoding: gzip\r\n\r\n4\r\nbody\r\n0\r\nMd5: 841a2d689ad86bd1611447453c22c6fc\r\nSize: 4\r\n\r\n")
+	testParser(t, true, data)
+}
+
+func testParser(t *testing.T, isClient bool, data []byte) error {
+	parser := newParser(isClient)
+	err := parser.ReadRequest(data)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	for i := 0; i < len(requestData)-1; i++ {
-		err := parser.ReadRequest(requestData[i : i+1])
+	for i := 0; i < len(data)-1; i++ {
+		err := parser.ReadRequest(data[i : i+1])
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	err = parser.ReadRequest(requestData[len(requestData)-1:])
+	err = parser.ReadRequest(data[len(data)-1:])
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	nRequest := 0
-	requestData = append(requestData, requestData...)
+	data = append(data, data...)
 
 	maxReadSize := 1024 * 1024 * 4
-	isClient := false
 	mux := &http.ServeMux{}
 	mux.HandleFunc("/", func(w http.ResponseWriter, request *http.Request) {
 		nRequest++
 	})
 	processor := NewServerProcessor(mux)
-
+	if isClient {
+		processor = NewClientProcessor(func(*http.Response) {
+			nRequest++
+		})
+	}
 	parser = NewParser(nil, processor, isClient, maxReadSize)
 	tBegin := time.Now()
 	loop := 100000
 	for i := 0; i < loop; i++ {
-		tmp := requestData
+		tmp := data
 		reads := [][]byte{}
 		for len(tmp) > 0 {
 			nRead := int(rand.Intn(len(tmp)) + 1)
@@ -73,7 +97,7 @@ func testParser(t *testing.T, requestData []byte) error {
 			tmp = tmp[nRead:]
 			err = parser.ReadRequest(readBuf)
 			if err != nil {
-				t.Fatalf("nRead: %v, numOne: %v, reads: %v, error: %v", len(requestData)-len(tmp), len(requestData), reads, err)
+				t.Fatalf("nRead: %v, numOne: %v, reads: %v, error: %v", len(data)-len(tmp), len(data), reads, err)
 			}
 
 		}
@@ -87,9 +111,12 @@ func testParser(t *testing.T, requestData []byte) error {
 	return nil
 }
 
-func newParser() *Parser {
+func newParser(isClient bool) *Parser {
 	maxReadSize := 1024 * 1024 * 4
-	isClient := false
+	if isClient {
+		processor := NewClientProcessor(func(*http.Response) {})
+		return NewParser(nil, processor, isClient, maxReadSize)
+	}
 	mux := &http.ServeMux{}
 	mux.HandleFunc("/", pirntMessage)
 	processor := NewServerProcessor(mux)
