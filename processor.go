@@ -9,15 +9,15 @@ import (
 
 // Processor .
 type Processor interface {
-	Method(method string)
-	URL(uri string) error
-	Proto(proto string) error
-	Status(status string)
-	Header(key, value string)
-	ContentLength(contentLength int)
-	Body([]byte)
-	TrailerHeader(key, value string)
-	Complete(addr string)
+	OnMethod(method string)
+	OnURL(uri string) error
+	OnProto(proto string) error
+	OnStatus(status string)
+	OnHeader(key, value string)
+	OnContentLength(contentLength int)
+	OnBody([]byte)
+	OnTrailerHeader(key, value string)
+	OnComplete(addr string)
 }
 
 // ServerProcessor .
@@ -26,8 +26,8 @@ type ServerProcessor struct {
 	handler http.Handler
 }
 
-// Method .
-func (p *ServerProcessor) Method(method string) {
+// OnMethod .
+func (p *ServerProcessor) OnMethod(method string) {
 	if p.request == nil {
 		p.request = &http.Request{
 			Method: method,
@@ -38,8 +38,8 @@ func (p *ServerProcessor) Method(method string) {
 	}
 }
 
-// URL .
-func (p *ServerProcessor) URL(uri string) error {
+// OnURL .
+func (p *ServerProcessor) OnURL(uri string) error {
 	u, err := url.ParseRequestURI(uri)
 	if err != nil {
 		return err
@@ -49,8 +49,8 @@ func (p *ServerProcessor) URL(uri string) error {
 	return nil
 }
 
-// Proto .
-func (p *ServerProcessor) Proto(proto string) error {
+// OnProto .
+func (p *ServerProcessor) OnProto(proto string) error {
 	protoMajor, protoMinor, ok := http.ParseHTTPVersion(proto)
 	if !ok {
 		return fmt.Errorf("%s %q", "malformed HTTP version", proto)
@@ -61,23 +61,23 @@ func (p *ServerProcessor) Proto(proto string) error {
 	return nil
 }
 
-// Status .
-func (p *ServerProcessor) Status(status string) {
+// OnStatus .
+func (p *ServerProcessor) OnStatus(status string) {
 
 }
 
-// Header .
-func (p *ServerProcessor) Header(key, value string) {
+// OnHeader .
+func (p *ServerProcessor) OnHeader(key, value string) {
 	p.request.Header.Add(key, value)
 }
 
-// ContentLength .
-func (p *ServerProcessor) ContentLength(contentLength int) {
+// OnContentLength .
+func (p *ServerProcessor) OnContentLength(contentLength int) {
 	p.request.ContentLength = int64(contentLength)
 }
 
-// Body .
-func (p *ServerProcessor) Body(data []byte) {
+// OnBody .
+func (p *ServerProcessor) OnBody(data []byte) {
 	if p.request.Body == nil {
 		p.request.Body = &BodyReader{buffer: data}
 	} else {
@@ -86,16 +86,16 @@ func (p *ServerProcessor) Body(data []byte) {
 	}
 }
 
-// TrailerHeader .
-func (p *ServerProcessor) TrailerHeader(key, value string) {
+// OnTrailerHeader .
+func (p *ServerProcessor) OnTrailerHeader(key, value string) {
 	if p.request.Trailer == nil {
 		p.request.Trailer = http.Header{}
 	}
 	p.request.Trailer.Add(key, value)
 }
 
-// Complete .
-func (p *ServerProcessor) Complete(addr string) {
+// OnComplete .
+func (p *ServerProcessor) OnComplete(addr string) {
 	if p.request.URL.Host == "" {
 		p.request.URL.Host = p.request.Header.Get("Host")
 	}
@@ -124,48 +124,48 @@ func NewServerProcessor(handler http.Handler) Processor {
 // EmptyProcessor .
 type EmptyProcessor struct{}
 
-// Method .
-func (p *EmptyProcessor) Method(method string) {
+// OnMethod .
+func (p *EmptyProcessor) OnMethod(method string) {
 
 }
 
-// URL .
-func (p *EmptyProcessor) URL(uri string) error {
+// OnURL .
+func (p *EmptyProcessor) OnURL(uri string) error {
 	return nil
 }
 
-// Proto .
-func (p *EmptyProcessor) Proto(proto string) error {
+// OnProto .
+func (p *EmptyProcessor) OnProto(proto string) error {
 	return nil
 }
 
-// Status .
-func (p *EmptyProcessor) Status(status string) {
+// OnStatus .
+func (p *EmptyProcessor) OnStatus(status string) {
 
 }
 
-// Header .
-func (p *EmptyProcessor) Header(key, value string) {
+// OnHeader .
+func (p *EmptyProcessor) OnHeader(key, value string) {
 
 }
 
-// ContentLength .
-func (p *EmptyProcessor) ContentLength(contentLength int) {
+// OnContentLength .
+func (p *EmptyProcessor) OnContentLength(contentLength int) {
 
 }
 
-// Body .
-func (p *EmptyProcessor) Body(data []byte) {
+// OnBody .
+func (p *EmptyProcessor) OnBody(data []byte) {
 
 }
 
-// TrailerHeader .
-func (p *EmptyProcessor) TrailerHeader(key, value string) {
+// OnTrailerHeader .
+func (p *EmptyProcessor) OnTrailerHeader(key, value string) {
 
 }
 
-// Complete .
-func (p *EmptyProcessor) Complete(addr string) {
+// OnComplete .
+func (p *EmptyProcessor) OnComplete(addr string) {
 
 }
 
