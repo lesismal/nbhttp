@@ -1,114 +1,12 @@
 package nbhttp
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/textproto"
 	"strconv"
 	"strings"
-)
-
-var (
-
-	// ErrInvalidCRLF .
-	ErrInvalidCRLF = errors.New("invalid cr/lf at the end of line")
-
-	// ErrInvalidHTTPVersion .
-	ErrInvalidHTTPVersion = errors.New("invalid HTTP version")
-
-	// ErrInvalidHTTPStatusCode .
-	ErrInvalidHTTPStatusCode = errors.New("invalid HTTP status code")
-
-	// ErrInvalidMethod .
-	ErrInvalidMethod = errors.New("invalid HTTP method")
-
-	// ErrInvalidRequestURI .
-	ErrInvalidRequestURI = errors.New("invalid URL")
-
-	// ErrInvalidHost .
-	ErrInvalidHost = errors.New("invalid host")
-
-	// ErrInvalidPort .
-	ErrInvalidPort = errors.New("invalid port")
-
-	// ErrInvalidPath .
-	ErrInvalidPath = errors.New("invalid path")
-
-	// ErrInvalidQueryString .
-	ErrInvalidQueryString = errors.New("invalid query string")
-
-	// ErrInvalidFragment .
-	ErrInvalidFragment = errors.New("invalid fragment")
-
-	// ErrCRExpected .
-	ErrCRExpected = errors.New("CR character expected")
-
-	// ErrLFExpected .
-	ErrLFExpected = errors.New("LF character expected")
-
-	// ErrInvalidCharInHeader .
-	ErrInvalidCharInHeader = errors.New("invalid character in header")
-
-	// ErrUnexpectedContentLength .
-	ErrUnexpectedContentLength = errors.New("unexpected content-length header")
-
-	// ErrInvalidContentLength .
-	ErrInvalidContentLength = errors.New("invalid ContentLength")
-
-	// ErrInvalidChunkSize .
-	ErrInvalidChunkSize = errors.New("invalid chunk size")
-
-	// ErrTrailerExpected .
-	ErrTrailerExpected = errors.New("trailer expected")
-)
-
-const (
-	// state: RequestLine
-	stateInit int8 = iota
-	stateMethodBefore
-	stateMethod
-
-	statePathBefore
-	statePath
-	stateProtoBefore
-	stateProto
-	stateProtoLF
-	stateStatusBefore
-	stateStatus
-
-	// state: Header
-	stateHeaderKeyBefore
-	stateHeaderValueLF
-	stateHeaderKey
-
-	stateHeaderValueBefore
-	stateHeaderValue
-
-	// state: Body ContentLength
-	stateBodyContentLength
-
-	// state: Body Chunk
-	stateHeaderOverLF
-	stateBodyChunkSizeBlankLine
-	stateBodyChunkSizeBefore
-	stateBodyChunkSize
-	stateBodyChunkSizeLF
-	stateBodyChunkData
-	stateBodyChunkDataCR
-	stateBodyChunkDataLF
-
-	// state: Body Trailer
-	stateBodyTrailerHeaderValueLF
-	stateBodyTrailerHeaderKeyBefore
-	stateBodyTrailerHeaderKey
-	stateBodyTrailerHeaderValueBefore
-	stateBodyTrailerHeaderValue
-
-	// state: Body CRLF
-	stateTailCR
-	stateTailLF
 )
 
 // Parser .
@@ -119,7 +17,11 @@ type Parser struct {
 
 	cache []byte
 
-	proto       string
+	proto string
+
+	statusCode int
+	status     string
+
 	headerKey   string
 	headerValue string
 
@@ -232,16 +134,89 @@ func (p *Parser) ReadRequest(data []byte) error {
 				p.proto = ""
 				p.nextState(stateProtoLF)
 			}
+		case stateClientProtoBefore:
+			if c != 'H' {
+				// data = data[i:]
+				// i = 0
+				start = i
+				p.nextState(stateClientProto)
+			}
+		case stateClientProto:
+			switch c {
+			case ' ':
+				if p.proto == "" {
+					p.proto = string(data[start:i])
+				}
+				if err := p.processor.OnProto(p.proto); err != nil {
+					p.proto = ""
+					return err
+				}
+				p.proto = ""
+				p.nextState(stateStatusCodeBefore)
+			}
+		case stateStatusCodeBefore:
+			switch c {
+			case ' ':
+			default:
+				if isNum(c) {
+					start = i
+					p.nextState(stateStatusCode)
+				}
+				continue
+			}
+			return ErrInvalidHTTPStatusCode
+		case stateStatusCode:
+			if c == ' ' {
+				cs := string(data[start:i])
+				code, err := strconv.Atoi(cs)
+				if err != nil {
+					return err
+				}
+				p.statusCode = code
+				p.nextState(stateStatusBefore)
+				continue
+			}
+			if !isNum(c) {
+				return ErrInvalidHTTPStatusCode
+			}
+		case stateStatusBefore:
+			switch c {
+			case ' ':
+			default:
+				if isAlpha(c) {
+					start = i
+					p.nextState(stateStatus)
+				}
+				continue
+			}
+			return ErrInvalidHTTPStatus
+		case stateStatus:
+			switch c {
+			case ' ':
+				if p.status == "" {
+					p.status = string(data[start:i])
+				}
+			case '\r':
+				if p.status == "" {
+					p.status = string(data[start:i])
+				}
+				p.processor.OnStatus(p.statusCode, p.status)
+				p.statusCode = 0
+				p.status = ""
+				p.nextState(stateStatusLF)
+			}
+		case stateStatusLF:
+			if c == '\n' {
+				p.nextState(stateHeaderKeyBefore)
+				continue
+			}
+			return ErrLFExpected
 		case stateProtoLF:
 			if c == '\n' {
 				// data = data[i+1:]
 				// i = -1
 				start = i + 1
-				if !p.isClient {
-					p.nextState(stateHeaderKeyBefore)
-				} else {
-					p.nextState(stateStatusBefore)
-				}
+				p.nextState(stateHeaderKeyBefore)
 				continue
 			}
 			return ErrLFExpected
@@ -368,7 +343,6 @@ func (p *Parser) ReadRequest(data []byte) error {
 						p.nextState(stateBodyContentLength)
 					} else {
 						p.handleMessage()
-						p.nextState(stateMethodBefore)
 					}
 				}
 				continue
@@ -386,7 +360,6 @@ func (p *Parser) ReadRequest(data []byte) error {
 			start = cl
 
 			p.handleMessage()
-			p.nextState(stateMethodBefore)
 		case stateBodyChunkSizeBefore:
 			if isNum(c) {
 				p.chunkSize = -1
@@ -565,7 +538,6 @@ func (p *Parser) ReadRequest(data []byte) error {
 				// i = -1
 				start = i + 1
 				p.handleMessage()
-				p.nextState(stateMethodBefore)
 				continue
 			}
 			return ErrLFExpected
@@ -673,6 +645,12 @@ func (p *Parser) handleMessage() {
 	}
 	p.processor.OnComplete(addr)
 	p.header = nil
+
+	if !p.isClient {
+		p.nextState(stateMethodBefore)
+	} else {
+		p.nextState(stateClientProtoBefore)
+	}
 }
 
 // NewParser .
@@ -680,9 +658,13 @@ func NewParser(conn net.Conn, processor Processor, isClient bool, maxReadSize in
 	if processor == nil {
 		processor = NewEmptyProcessor()
 	}
+	state := stateMethodBefore
+	if isClient {
+		state = stateClientProtoBefore
+	}
 	return &Parser{
 		conn:        conn,
-		state:       stateMethodBefore,
+		state:       state,
 		maxReadSize: maxReadSize,
 		isClient:    isClient,
 		processor:   processor,
