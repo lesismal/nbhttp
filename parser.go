@@ -646,11 +646,7 @@ func (p *Parser) parseTrailer() error {
 }
 
 func (p *Parser) handleMessage() {
-	var addr string
-	if p.conn != nil {
-		addr = p.conn.RemoteAddr().String()
-	}
-	p.processor.OnComplete(addr)
+	p.processor.OnComplete(p.conn)
 	p.header = nil
 
 	if !p.isClient {
