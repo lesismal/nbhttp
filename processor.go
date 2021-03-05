@@ -12,7 +12,7 @@ type Processor interface {
 	OnMethod(method string)
 	OnURL(uri string) error
 	OnProto(proto string) error
-	OnStatus(status string)
+	OnStatus(code int, status string)
 	OnHeader(key, value string)
 	OnContentLength(contentLength int)
 	OnBody([]byte)
@@ -62,7 +62,7 @@ func (p *ServerProcessor) OnProto(proto string) error {
 }
 
 // OnStatus .
-func (p *ServerProcessor) OnStatus(status string) {
+func (p *ServerProcessor) OnStatus(code int, status string) {
 
 }
 
@@ -140,7 +140,7 @@ func (p *EmptyProcessor) OnProto(proto string) error {
 }
 
 // OnStatus .
-func (p *EmptyProcessor) OnStatus(status string) {
+func (p *EmptyProcessor) OnStatus(code int, status string) {
 
 }
 
